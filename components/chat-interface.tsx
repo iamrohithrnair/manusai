@@ -6,6 +6,8 @@ import { DefaultChatTransport, UIMessage } from 'ai';
 import { MessageList } from './message-list';
 import { MessageInput } from './message-input';
 import { Button } from '@/components/ui/button';
+import { useManusApiKey } from '@/components/manus-api-key-provider';
+import { manusKeyHeaders } from '@/lib/manus-key-storage';
 
 interface ChatInterfaceProps {
   apiEndpoint: string;
@@ -40,6 +42,8 @@ export function ChatInterface({
   onManusSyncSettled,
   contentPlanId,
 }: ChatInterfaceProps) {
+  const { apiKey } = useManusApiKey();
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -49,8 +53,11 @@ export function ChatInterface({
           ...(rootCompanyId ? { rootCompanyId } : {}),
           ...(contentPlanId ? { contentPlanId } : {}),
         },
+        headers: () => ({
+          ...manusKeyHeaders(apiKey),
+        }),
       }),
-    [apiEndpoint, chatId, rootCompanyId, contentPlanId]
+    [apiEndpoint, chatId, rootCompanyId, contentPlanId, apiKey]
   );
 
   const { messages, sendMessage, status, stop, error, setMessages } = useChat({
@@ -79,7 +86,7 @@ export function ChatInterface({
       try {
         const res = await fetch(`${syncBase}/sync`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...manusKeyHeaders(apiKey) },
           body: JSON.stringify({ chatId, rootCompanyId }),
         });
         const data = (await res.json()) as {
@@ -123,7 +130,7 @@ export function ChatInterface({
         if (opts?.fromManual) setSyncBusy(false);
       }
     },
-    [chatId, rootCompanyId, syncBase, setMessages, onManusSyncSettled]
+    [chatId, rootCompanyId, syncBase, setMessages, onManusSyncSettled, apiKey]
   );
 
   useEffect(() => {
@@ -131,7 +138,8 @@ export function ChatInterface({
     let cancelled = false;
     (async () => {
       const r = await fetch(
-        `${syncBase}/pending?chatId=${encodeURIComponent(chatId)}&companyId=${encodeURIComponent(rootCompanyId)}`
+        `${syncBase}/pending?chatId=${encodeURIComponent(chatId)}&companyId=${encodeURIComponent(rootCompanyId)}`,
+        { headers: { ...manusKeyHeaders(apiKey) } }
       );
       const j = (await r.json()) as { pending?: boolean };
       if (cancelled || !j.pending) return;
@@ -141,7 +149,7 @@ export function ChatInterface({
     return () => {
       cancelled = true;
     };
-  }, [chatId, rootCompanyId, syncBase, runManusSync]);
+  }, [chatId, rootCompanyId, syncBase, runManusSync, apiKey]);
 
   useEffect(() => {
     const prev = prevStatusRef.current;
@@ -151,7 +159,8 @@ export function ChatInterface({
     if (!wasActive || status !== 'ready') return;
     (async () => {
       const r = await fetch(
-        `${syncBase}/pending?chatId=${encodeURIComponent(chatId)}&companyId=${encodeURIComponent(rootCompanyId)}`
+        `${syncBase}/pending?chatId=${encodeURIComponent(chatId)}&companyId=${encodeURIComponent(rootCompanyId)}`,
+        { headers: { ...manusKeyHeaders(apiKey) } }
       );
       const j = (await r.json()) as { pending?: boolean };
       if (j.pending) {
@@ -159,7 +168,7 @@ export function ChatInterface({
         runManusSync(undefined);
       }
     })();
-  }, [status, chatId, rootCompanyId, syncBase, runManusSync]);
+  }, [status, chatId, rootCompanyId, syncBase, runManusSync, apiKey]);
 
   useEffect(() => {
     if (!manusPolling) return;
@@ -179,12 +188,13 @@ export function ChatInterface({
   const onManualSync = useCallback(async () => {
     if (!syncBase || !chatId || !rootCompanyId) return;
     const r = await fetch(
-      `${syncBase}/pending?chatId=${encodeURIComponent(chatId)}&companyId=${encodeURIComponent(rootCompanyId)}`
+      `${syncBase}/pending?chatId=${encodeURIComponent(chatId)}&companyId=${encodeURIComponent(rootCompanyId)}`,
+      { headers: { ...manusKeyHeaders(apiKey) } }
     );
     const j = (await r.json()) as { pending?: boolean };
     if (j.pending) setManusPolling(true);
     await runManusSync({ fromManual: true });
-  }, [syncBase, chatId, rootCompanyId, runManusSync]);
+  }, [syncBase, chatId, rootCompanyId, runManusSync, apiKey]);
 
   const streamLoading = status === 'streaming' || status === 'submitted';
   const isLoading = streamLoading || manusPolling;

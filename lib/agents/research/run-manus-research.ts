@@ -9,7 +9,13 @@ import {
 } from '@/lib/agents/research/system-prompt';
 import { parseResearchResult } from '@/lib/agents/research/result-parser';
 import { saveResearchGraph } from '@/lib/agents/research/db-helpers';
-import { createTask, extractAssistantText, pollOneStep, pollUntilComplete } from '@/lib/manus-client';
+import {
+  createTask,
+  extractAssistantText,
+  pollOneStep,
+  pollUntilComplete,
+  type ManusApiKeyOverride,
+} from '@/lib/manus-client';
 import { loadChat, saveChat } from '@/lib/chat-store';
 import { extractLastManusTaskIdFromMessages } from '@/lib/manus-chat-messages';
 
@@ -90,6 +96,12 @@ async function buildPrompt(companyId: string, userInstructions: string): Promise
   return buildResearchPrompt(rowToProfile(company), existingForPrompt, effectiveUser);
 }
 
+export type StartManusResearchTaskOptions = {
+  chatId?: string;
+  taskSource?: 'chat' | 'company_bootstrap';
+  apiKey?: ManusApiKeyOverride;
+};
+
 /**
  * Create a Manus research task and persist a running row (optionally linked to a chat).
  * Does not poll — use syncPendingResearchTask from the UI or pollUntilComplete for blocking flows.
@@ -97,16 +109,19 @@ async function buildPrompt(companyId: string, userInstructions: string): Promise
 export async function startManusResearchTask(
   companyId: string,
   userInstructions: string,
-  chatId?: string,
-  taskSource: 'chat' | 'company_bootstrap' = 'chat'
+  options?: StartManusResearchTaskOptions
 ): Promise<{ taskId: string }> {
   const prompt = await buildPrompt(companyId, userInstructions);
-  const { taskId } = await createTask(prompt, { interactiveMode: false });
+  const { taskId } = await createTask(prompt, {
+    interactiveMode: false,
+    apiKey: options?.apiKey,
+  });
 
   await connectDB();
   const db = getDb();
   const mtId = randomUUID();
   const t0 = ts();
+  const taskSource = options?.taskSource ?? 'chat';
   db.insert(manusTasks)
     .values({
       id: mtId,
@@ -115,7 +130,7 @@ export async function startManusResearchTask(
       prompt: prompt.slice(0, 50000),
       status: 'running',
       companyId,
-      chatId: chatId ?? null,
+      chatId: options?.chatId ?? null,
       taskSource,
       createdAt: t0,
       updatedAt: t0,
@@ -285,7 +300,8 @@ async function persistResearchFromMessagesWithRaceGuard(
  */
 export async function syncPendingResearchTask(
   chatId: string,
-  rootCompanyId: string
+  rootCompanyId: string,
+  apiKey?: ManusApiKeyOverride
 ): Promise<
   | { status: 'idle' }
   | { status: 'running' }
@@ -297,7 +313,7 @@ export async function syncPendingResearchTask(
   const row = await findRunningResearchTaskForChat(chatId, rootCompanyId);
   if (!row) return { status: 'idle' };
 
-  const step = await pollOneStep(row.taskId);
+  const step = await pollOneStep(row.taskId, apiKey);
 
   if (step.kind === 'continue') {
     db.update(manusTasks).set({ updatedAt: ts() }).where(eq(manusTasks.id, row.id)).run();
@@ -363,19 +379,23 @@ export async function hasPendingResearchTask(chatId: string, rootCompanyId: stri
 export async function runManusResearchForCompany(
   companyId: string,
   userInstructions = '',
-  options?: { onStatus?: (status: string, elapsedMs: number) => void }
+  options?: { onStatus?: (status: string, elapsedMs: number) => void; apiKey?: ManusApiKeyOverride }
 ): Promise<{
   taskId: string;
   summary: string;
   parsed: boolean;
   resultText: string;
 }> {
-  const { taskId } = await startManusResearchTask(companyId, userInstructions, undefined, 'company_bootstrap');
+  const { taskId } = await startManusResearchTask(companyId, userInstructions, {
+    taskSource: 'company_bootstrap',
+    apiKey: options?.apiKey,
+  });
 
   const { messages } = await pollUntilComplete(taskId, {
     intervalMs: 5000,
     timeoutMs: null,
     onStatus: options?.onStatus,
+    apiKey: options?.apiKey,
   });
 
   const resultText = extractAssistantText(messages);

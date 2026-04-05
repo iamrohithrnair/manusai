@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { CompanySelector } from '@/components/company-selector';
+import { SettingsMenu } from '@/components/settings-menu';
 
 const tabs = [
   { href: '/research', label: 'Research' },
@@ -37,6 +38,9 @@ export function NavTabs() {
             {tab.label}
           </Link>
         ))}
+        <div className="ml-auto flex items-center">
+          <SettingsMenu />
+        </div>
       </div>
     </nav>
   );

@@ -5,16 +5,19 @@
  * and interpret `status_update` / `agent_status` (running → stopped | waiting | error).
  * @see https://open.manus.im/docs/v2/task-lifecycle
  */
+import { resolveManusApiKey } from '@/lib/manus-api-key';
+
 const MANUS_API_BASE = 'https://api.manus.ai/v2';
 
 export type ContentPart = { type: string; [key: string]: unknown };
 
-function headers(): Record<string, string> {
-  const key = process.env.MANUS_API_KEY;
-  if (!key) throw new Error('MANUS_API_KEY is not set');
+/** Optional override: user key from Settings (priority over MANUS_API_KEY). */
+export type ManusApiKeyOverride = string | null | undefined;
+
+function headers(apiKey?: ManusApiKeyOverride): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    'x-manus-api-key': key,
+    'x-manus-api-key': resolveManusApiKey(apiKey),
   };
 }
 
@@ -24,6 +27,8 @@ export interface CreateTaskOptions {
   projectId?: string;
   locale?: string;
   interactiveMode?: boolean;
+  /** User-provided key (from app settings); takes priority over MANUS_API_KEY. */
+  apiKey?: ManusApiKeyOverride;
 }
 
 export interface ManusTaskResult {
@@ -49,7 +54,7 @@ export async function createTask(
 
   const res = await fetch(`${MANUS_API_BASE}/task.create`, {
     method: 'POST',
-    headers: headers(),
+    headers: headers(options?.apiKey),
     body: JSON.stringify(body),
   });
 
@@ -74,20 +79,20 @@ export async function createTask(
   };
 }
 
-export async function getTaskDetail(taskId: string): Promise<Record<string, unknown>> {
+export async function getTaskDetail(taskId: string, apiKey?: ManusApiKeyOverride): Promise<Record<string, unknown>> {
   const res = await fetch(
     `${MANUS_API_BASE}/task.detail?task_id=${encodeURIComponent(taskId)}`,
-    { headers: headers() }
+    { headers: headers(apiKey) }
   );
   const data = (await res.json()) as { ok?: boolean; task?: Record<string, unknown>; error?: { message?: string } };
   if (!data.ok) throw new Error(data.error?.message || 'Failed to get task');
   return data.task || {};
 }
 
-export async function sendMessage(taskId: string, content: string) {
+export async function sendMessage(taskId: string, content: string, apiKey?: ManusApiKeyOverride) {
   const res = await fetch(`${MANUS_API_BASE}/task.sendMessage`, {
     method: 'POST',
-    headers: headers(),
+    headers: headers(apiKey),
     body: JSON.stringify({ task_id: taskId, message: { content } }),
   });
   const data = (await res.json()) as { ok?: boolean; error?: { message?: string } };
@@ -98,11 +103,12 @@ export async function sendMessage(taskId: string, content: string) {
 export async function confirmAction(
   taskId: string,
   eventId: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  apiKey?: ManusApiKeyOverride
 ) {
   const res = await fetch(`${MANUS_API_BASE}/task.confirmAction`, {
     method: 'POST',
-    headers: headers(),
+    headers: headers(apiKey),
     body: JSON.stringify({ task_id: taskId, event_id: eventId, input }),
   });
   const data = (await res.json()) as { ok?: boolean; error?: { message?: string } };
@@ -110,12 +116,17 @@ export async function confirmAction(
   return data;
 }
 
-export async function listMessages(taskId: string, cursor?: string) {
+export async function listMessages(
+  taskId: string,
+  options?: { cursor?: string; apiKey?: ManusApiKeyOverride }
+) {
   /** Up to 200 per Manus API; research threads can have many events before the final answer. */
   const params = new URLSearchParams({ task_id: taskId, order: 'desc', limit: '200' });
-  if (cursor) params.set('cursor', cursor);
+  if (options?.cursor) params.set('cursor', options.cursor);
 
-  const res = await fetch(`${MANUS_API_BASE}/task.listMessages?${params}`, { headers: headers() });
+  const res = await fetch(`${MANUS_API_BASE}/task.listMessages?${params}`, {
+    headers: headers(options?.apiKey),
+  });
   const data = (await res.json()) as {
     ok?: boolean;
     messages?: unknown[];
@@ -126,17 +137,17 @@ export async function listMessages(taskId: string, cursor?: string) {
   return { messages: data.messages || [], nextCursor: data.next_cursor };
 }
 
-export async function listConnectors() {
-  const res = await fetch(`${MANUS_API_BASE}/connector.list`, { headers: headers() });
+export async function listConnectors(apiKey?: ManusApiKeyOverride) {
+  const res = await fetch(`${MANUS_API_BASE}/connector.list`, { headers: headers(apiKey) });
   const data = (await res.json()) as { ok?: boolean; connectors?: unknown[]; error?: { message?: string } };
   if (!data.ok) throw new Error(data.error?.message || 'Failed to list connectors');
   return data.connectors || [];
 }
 
-export async function uploadFile(filename: string) {
+export async function uploadFile(filename: string, apiKey?: ManusApiKeyOverride) {
   const res = await fetch(`${MANUS_API_BASE}/file.upload`, {
     method: 'POST',
-    headers: headers(),
+    headers: headers(apiKey),
     body: JSON.stringify({ filename }),
   });
   /** @see https://open.manus.ai/docs/v2/upload-file.md — `file.id` is the attachment id; top-level `upload_url` is presigned. */
@@ -161,13 +172,13 @@ export async function uploadFile(filename: string) {
 export type FileDetailStatus = 'pending' | 'uploaded' | 'deleted' | 'error';
 
 /** @see https://open.manus.im/docs/v2/upload-file — after PUT to \`upload_url\`, poll until \`uploaded\`. */
-export async function getFileDetail(fileId: string): Promise<{
+export async function getFileDetail(fileId: string, apiKey?: ManusApiKeyOverride): Promise<{
   status: FileDetailStatus;
   errorMessage?: string | null;
 }> {
   const res = await fetch(
     `${MANUS_API_BASE}/file.detail?file_id=${encodeURIComponent(fileId)}`,
-    { headers: headers() }
+    { headers: headers(apiKey) }
   );
   const data = (await res.json()) as Record<string, unknown>;
   if (!data.ok) {
@@ -193,13 +204,14 @@ export async function getFileDetail(fileId: string): Promise<{
  */
 export async function waitForFileUploaded(
   fileId: string,
-  options?: { timeoutMs?: number; intervalMs?: number }
+  options?: { timeoutMs?: number; intervalMs?: number; apiKey?: ManusApiKeyOverride }
 ): Promise<void> {
   const timeoutMs = options?.timeoutMs ?? 90_000;
   const intervalMs = options?.intervalMs ?? 500;
+  const apiKey = options?.apiKey;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const d = await getFileDetail(fileId);
+    const d = await getFileDetail(fileId, apiKey);
     if (d.status === 'uploaded') return;
     if (d.status === 'error') {
       throw new Error(d.errorMessage || `File ${fileId} upload failed on Manus`);
@@ -212,10 +224,10 @@ export async function waitForFileUploaded(
   throw new Error(`Timed out waiting for file ${fileId} to become ready (still pending)`);
 }
 
-export async function stopTask(taskId: string) {
+export async function stopTask(taskId: string, apiKey?: ManusApiKeyOverride) {
   const res = await fetch(`${MANUS_API_BASE}/task.stop`, {
     method: 'POST',
-    headers: headers(),
+    headers: headers(apiKey),
     body: JSON.stringify({ task_id: taskId }),
   });
   return res.json();
@@ -280,23 +292,25 @@ function readErrorDetailFromMessages(messages: unknown[]): string | undefined {
 async function handleWaiting(
   taskId: string,
   waitingEventId: string | undefined,
-  waitingEventType: string | undefined
+  waitingEventType: string | undefined,
+  apiKey?: ManusApiKeyOverride
 ) {
   if (!waitingEventId) return;
   if (waitingEventType === 'messageAskUser') {
     await sendMessage(
       taskId,
-      'Reply with your best concise answer and continue the task without asking for more input.'
+      'Reply with your best concise answer and continue the task without asking for more input.',
+      apiKey
     );
     return;
   }
   if (waitingEventType === 'needConnectMyBrowser') {
-    await confirmAction(taskId, waitingEventId, { action: 'skip' });
+    await confirmAction(taskId, waitingEventId, { action: 'skip' }, apiKey);
     return;
   }
   // https://open.manus.im/docs/v2/task-lifecycle — apiHighCreditNotice uses { action: "accept" | "reject" }
   if (waitingEventType === 'apiHighCreditNotice') {
-    await confirmAction(taskId, waitingEventId, { action: 'accept' });
+    await confirmAction(taskId, waitingEventId, { action: 'accept' }, apiKey);
     return;
   }
   if (
@@ -307,18 +321,18 @@ async function handleWaiting(
     waitingEventType === 'connectorOauthExpired' ||
     waitingEventType === 'mapreduceAction'
   ) {
-    await confirmAction(taskId, waitingEventId, { accept: true });
+    await confirmAction(taskId, waitingEventId, { accept: true }, apiKey);
     return;
   }
   if (waitingEventType === 'videoGenerate') {
-    await confirmAction(taskId, waitingEventId, { choice: 'standard' });
+    await confirmAction(taskId, waitingEventId, { choice: 'standard' }, apiKey);
     return;
   }
   if (waitingEventType === 'webdevRunAction') {
-    await confirmAction(taskId, waitingEventId, { accept: true, mode: 'speed' });
+    await confirmAction(taskId, waitingEventId, { accept: true, mode: 'speed' }, apiKey);
     return;
   }
-  await confirmAction(taskId, waitingEventId, { accept: true });
+  await confirmAction(taskId, waitingEventId, { accept: true }, apiKey);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -389,14 +403,14 @@ export function extractAssistantText(messages: unknown[]): string {
  * - `continue`: still provisioning, running, or waiting was handled — poll again later.
  * - `error`: terminal failure.
  */
-export async function pollOneStep(taskId: string): Promise<
+export async function pollOneStep(taskId: string, apiKey?: ManusApiKeyOverride): Promise<
   | { kind: 'completed'; messages: unknown[] }
   | { kind: 'continue'; statusLabel: string }
   | { kind: 'error'; message: string }
 > {
   let messages: unknown[];
   try {
-    messages = (await listMessages(taskId)).messages;
+    messages = (await listMessages(taskId, { apiKey })).messages;
   } catch (e) {
     if (isTransientTaskNotFoundError(e)) {
       return { kind: 'continue', statusLabel: 'task_provisioning' };
@@ -416,7 +430,7 @@ export async function pollOneStep(taskId: string): Promise<
   }
 
   if (agentStatus === 'waiting') {
-    await handleWaiting(taskId, waitingEventId, waitingEventType);
+    await handleWaiting(taskId, waitingEventId, waitingEventType, apiKey);
     return { kind: 'continue', statusLabel: 'waiting' };
   }
 
@@ -431,17 +445,19 @@ export async function pollUntilComplete(
     /** Omit for default 5 minutes; pass `null` for no timeout. */
     timeoutMs?: number | null;
     onStatus?: (status: string, elapsedMs: number) => void;
+    apiKey?: ManusApiKeyOverride;
   }
 ): Promise<{ status: string; messages: unknown[] }> {
   const interval = options?.intervalMs ?? 5000;
   const timeout = options?.timeoutMs === undefined ? 300000 : options.timeoutMs;
+  const apiKey = options?.apiKey;
   const start = Date.now();
 
   while (true) {
     const elapsed = Date.now() - start;
     if (timeout !== null && elapsed > timeout) throw new Error(`Task ${taskId} timed out after ${timeout}ms`);
 
-    const step = await pollOneStep(taskId);
+    const step = await pollOneStep(taskId, apiKey);
     if (step.kind === 'completed') {
       options?.onStatus?.('stopped', elapsed);
       return { status: 'completed', messages: step.messages };
@@ -468,10 +484,12 @@ export async function runTask(
     onStatus?: (status: string, elapsedMs: number) => void;
   }
 ): Promise<{ taskId: string; resultText: string; messages: unknown[] }> {
+  const apiKey = options?.apiKey;
   const { taskId } = await createTask(content, options);
   const { messages } = await pollUntilComplete(taskId, {
     timeoutMs: options?.timeoutMs,
     onStatus: options?.onStatus,
+    apiKey,
   });
 
   const resultText = extractAssistantText(messages);

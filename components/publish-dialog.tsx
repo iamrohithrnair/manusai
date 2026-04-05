@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useManusApiKey } from '@/components/manus-api-key-provider';
+import { manusKeyHeaders } from '@/lib/manus-key-storage';
 
 interface Connector {
   id?: string;
@@ -23,17 +25,18 @@ export function PublishDialog({
   previewText: string;
   onPublish: (platform: string) => Promise<void>;
 }) {
+  const { apiKey } = useManusApiKey();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [platform, setPlatform] = useState('linkedin');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    fetch('/api/connectors')
+    fetch('/api/connectors', { headers: { ...manusKeyHeaders(apiKey) } })
       .then((r) => r.json())
       .then((d) => setConnectors(d.connectors || []))
       .catch(() => setConnectors([]));
-  }, [open]);
+  }, [open, apiKey]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>

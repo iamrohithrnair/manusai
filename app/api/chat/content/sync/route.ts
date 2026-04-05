@@ -1,4 +1,5 @@
 import { syncPendingContentTask } from '@/lib/agents/content/content-chat-background';
+import { getManusApiKeyFromRequest } from '@/lib/manus-api-key';
 
 export async function POST(req: Request) {
   const body = (await req.json()) as { chatId?: string; rootCompanyId?: string };
@@ -7,6 +8,6 @@ export async function POST(req: Request) {
     return Response.json({ error: 'chatId and rootCompanyId required' }, { status: 400 });
   }
 
-  const result = await syncPendingContentTask(chatId, rootCompanyId);
+  const result = await syncPendingContentTask(chatId, rootCompanyId, getManusApiKeyFromRequest(req));
   return Response.json(result);
 }

@@ -15,10 +15,12 @@ import {
 } from '@/lib/agents/research/run-manus-research';
 import { formatResearchWorkspacePreview } from '@/lib/agents/research/format-workspace-preview';
 import { getAllUserResearchInstructions } from '@/lib/messages';
+import { getManusApiKeyFromRequest } from '@/lib/manus-api-key';
 
 export const maxDuration = 120;
 
 export async function POST(req: Request) {
+  const manusApiKey = getManusApiKeyFromRequest(req);
   const body = await req.json();
   const { messages, chatId, rootCompanyId } = body as {
     messages: UIMessage[];
@@ -56,7 +58,10 @@ export async function POST(req: Request) {
       push(`🔍 Starting research for **${company.name}**...\n\n`);
       push(formatResearchWorkspacePreview(company, userInstructions));
 
-      const { taskId } = await startManusResearchTask(rootCompanyId, userInstructions, chatId);
+      const { taskId } = await startManusResearchTask(rootCompanyId, userInstructions, {
+        chatId,
+        apiKey: manusApiKey,
+      });
       push('\n\n');
       push(formatResearchStartedMessage(taskId));
 

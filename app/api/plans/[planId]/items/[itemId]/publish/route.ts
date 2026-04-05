@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { connectDB, getDb } from '@/lib/db/client';
 import { contentItems, planItems } from '@/lib/db/schema';
 import { createTask, pollUntilComplete, extractAssistantText, listConnectors } from '@/lib/manus-client';
+import { getManusApiKeyFromRequest } from '@/lib/manus-api-key';
 
 export const maxDuration = 300;
 
@@ -10,6 +11,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ planId: string; itemId: string }> }
 ) {
+  const manusApiKey = getManusApiKeyFromRequest(req);
   const { planId, itemId } = await params;
   const { platform } = await req.json();
   if (!platform) return NextResponse.json({ error: 'platform required' }, { status: 400 });
@@ -29,7 +31,12 @@ export async function POST(
   const text = content?.textContent || '';
   if (!text) return NextResponse.json({ error: 'No content to publish' }, { status: 400 });
 
-  const connectors = (await listConnectors()) as Array<{ id?: string; uuid?: string; type?: string; name?: string }>;
+  const connectors = (await listConnectors(manusApiKey)) as Array<{
+    id?: string;
+    uuid?: string;
+    type?: string;
+    name?: string;
+  }>;
   const want = String(platform).toLowerCase();
   const match = connectors.find((c) => {
     const t = `${c.type || ''} ${c.name || ''}`.toLowerCase();
@@ -39,8 +46,11 @@ export async function POST(
 
   const prompt = `Publish the following content to ${platform}. Use the connected account. After publishing, reply with ONLY the public URL of the post in a JSON block: \`\`\`json {"url":"..."}\`\`\`\n\n---\n\n${text.slice(0, 8000)}`;
 
-  const { taskId } = await createTask(prompt, connectorId ? { connectors: [connectorId] } : {});
-  const { messages } = await pollUntilComplete(taskId, { timeoutMs: null });
+  const { taskId } = await createTask(prompt, {
+    connectors: connectorId ? [connectorId] : undefined,
+    apiKey: manusApiKey,
+  });
+  const { messages } = await pollUntilComplete(taskId, { timeoutMs: null, apiKey: manusApiKey });
   const resultText = extractAssistantText(messages);
 
   let publishedUrl = '';

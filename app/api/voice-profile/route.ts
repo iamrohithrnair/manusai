@@ -11,6 +11,7 @@ import {
   waitForFileUploaded,
   VOICE_INLINE_DATA_MAX_BYTES,
 } from '@/lib/manus-client';
+import { getManusApiKeyFromRequest } from '@/lib/manus-api-key';
 
 export const maxDuration = 300;
 
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
   }
 
   try {
+  const manusApiKey = getManusApiKeyFromRequest(req);
   const arrayBuffer = await file.arrayBuffer();
   if (arrayBuffer.byteLength === 0) {
     return Response.json({ error: 'Empty audio recording. Record again, then upload.' }, { status: 400 });
@@ -96,10 +98,10 @@ Return JSON in a code block:
       { type: 'text', text: instruction },
     ];
   } else {
-    const up = await uploadFile('recording.webm');
+    const up = await uploadFile('recording.webm', manusApiKey);
     fileId = up.fileId;
     await putUpload(up.uploadUrl, arrayBuffer, mime);
-    await waitForFileUploaded(fileId);
+    await waitForFileUploaded(fileId, { apiKey: manusApiKey });
     content = [
       {
         type: 'voice',
@@ -111,8 +113,8 @@ Return JSON in a code block:
     ];
   }
 
-  const { taskId } = await createTask(content, { interactiveMode: false });
-  const { messages } = await pollUntilComplete(taskId, { timeoutMs: null });
+  const { taskId } = await createTask(content, { interactiveMode: false, apiKey: manusApiKey });
+  const { messages } = await pollUntilComplete(taskId, { timeoutMs: null, apiKey: manusApiKey });
   const text = extractAssistantText(messages);
 
   let parsed: {

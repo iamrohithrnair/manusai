@@ -18,10 +18,12 @@ import {
 import { buildContentResearchPack } from '@/lib/agents/content/research-context';
 import { getLastUserText } from '@/lib/messages';
 import type { VoiceProfileLike } from '@/lib/types/voice';
+import { getManusApiKeyFromRequest } from '@/lib/manus-api-key';
 
 export const maxDuration = 120;
 
 export async function POST(req: Request) {
+  const manusApiKey = getManusApiKeyFromRequest(req);
   const body = await req.json();
   const { messages, chatId, rootCompanyId, contentPlanId } = body as {
     messages: UIMessage[];
@@ -88,6 +90,7 @@ export async function POST(req: Request) {
           researchContext: researchContext || 'No research nodes yet — infer general best practices.',
           voice,
           targetPlanId: contentPlanId || null,
+          apiKey: manusApiKey,
         });
         push('\n\n');
         push(formatContentPlanStartedMessage(taskId));
@@ -99,6 +102,7 @@ export async function POST(req: Request) {
           userPrompt: getLastUserText(validated).slice(0, 500),
           researchContext: researchContext || '',
           voice,
+          apiKey: manusApiKey,
         });
         push('\n\n');
         push(formatContentDraftStartedMessage(taskId));

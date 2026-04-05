@@ -8,7 +8,7 @@ import {
   buildVoiceProfileBlock,
 } from '@/lib/agents/content/system-prompt';
 import { parseContentPlanJson } from '@/lib/agents/content/manus-content';
-import { createTask, extractAssistantText, pollOneStep } from '@/lib/manus-client';
+import { createTask, extractAssistantText, pollOneStep, type ManusApiKeyOverride } from '@/lib/manus-client';
 import { loadChat, saveChat } from '@/lib/chat-store';
 import { extractLastManusTaskIdFromMessages } from '@/lib/manus-chat-messages';
 import type { VoiceProfileLike } from '@/lib/types/voice';
@@ -93,9 +93,10 @@ export async function startContentDraftManusTask(params: {
   userPrompt: string;
   researchContext: string;
   voice: VoiceProfileLike | null;
+  apiKey?: ManusApiKeyOverride;
 }): Promise<{ taskId: string }> {
   const prompt = buildDraftPrompt(params.userPrompt, params.researchContext, params.voice);
-  const { taskId } = await createTask(prompt);
+  const { taskId } = await createTask(prompt, { apiKey: params.apiKey });
 
   await connectDB();
   const db = getDb();
@@ -127,9 +128,10 @@ export async function startContentPlanManusTask(params: {
   voice: VoiceProfileLike | null;
   /** Merge resulting plan items into this workspace plan (sidebar) instead of creating a new plan row. */
   targetPlanId?: string | null;
+  apiKey?: ManusApiKeyOverride;
 }): Promise<{ taskId: string }> {
   const prompt = buildPlanPrompt(params.instruction, params.researchContext, params.voice);
-  const { taskId } = await createTask(prompt);
+  const { taskId } = await createTask(prompt, { apiKey: params.apiKey });
 
   await connectDB();
   const db = getDb();
@@ -426,7 +428,8 @@ export async function hasPendingContentTask(chatId: string, rootCompanyId: strin
 
 export async function syncPendingContentTask(
   chatId: string,
-  rootCompanyId: string
+  rootCompanyId: string,
+  apiKey?: ManusApiKeyOverride
 ): Promise<
   | { status: 'idle' }
   | { status: 'running' }
@@ -441,7 +444,7 @@ export async function syncPendingContentTask(
     return { status: 'idle' };
   }
 
-  const step = await pollOneStep(row.taskId);
+  const step = await pollOneStep(row.taskId, apiKey);
 
   if (step.kind === 'continue') {
     db.update(manusTasks).set({ updatedAt: ts() }).where(eq(manusTasks.id, row.id)).run();

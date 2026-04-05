@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { PlanItemData } from '@/components/pipeline-card';
+import { useManusApiKey } from '@/components/manus-api-key-provider';
+import { manusKeyHeaders } from '@/lib/manus-key-storage';
 
 interface PlanData {
   _id: string;
@@ -22,6 +24,7 @@ interface PlanData {
 
 export default function ContentPage() {
   const { activeCompany } = useCompany();
+  const { apiKey } = useManusApiKey();
   const [plans, setPlans] = useState<PlanData[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<PlanItemData | null>(null);
@@ -248,7 +251,10 @@ export default function ContentPage() {
                     setDraftBusy(true);
                     setDraftNote(null);
                     try {
-                      const res = await fetch(`/api/plans/${activePlan._id}/activate`, { method: 'POST' });
+                      const res = await fetch(`/api/plans/${activePlan._id}/activate`, {
+                        method: 'POST',
+                        headers: { ...manusKeyHeaders(apiKey) },
+                      });
                       const data = (await res.json()) as { error?: string; message?: string; generated?: string[] };
                       if (!res.ok) {
                         setDraftNote(data.error || `Failed (${res.status})`);

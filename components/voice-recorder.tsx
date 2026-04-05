@@ -3,6 +3,8 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { useManusApiKey } from '@/components/manus-api-key-provider';
+import { manusKeyHeaders } from '@/lib/manus-key-storage';
 
 export type SavedVoiceProfile = {
   toneDescription?: string;
@@ -25,6 +27,7 @@ export function VoiceRecorder({
   /** After seeding the pipeline from voice. */
   onPlanUpdated?: () => void;
 }) {
+  const { apiKey } = useManusApiKey();
   const [rec, setRec] = useState<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const [blob, setBlob] = useState<Blob | null>(null);
@@ -79,7 +82,11 @@ Please generate a **content plan** with concrete topics. Use all major formats (
     setUploading(true);
     setLastProfile(null);
     try {
-      const res = await fetch('/api/voice-profile', { method: 'POST', body: form });
+      const res = await fetch('/api/voice-profile', {
+        method: 'POST',
+        headers: { ...manusKeyHeaders(apiKey) },
+        body: form,
+      });
       const data = (await res.json()) as {
         profile?: SavedVoiceProfile;
         error?: string;

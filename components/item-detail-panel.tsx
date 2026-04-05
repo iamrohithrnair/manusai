@@ -8,6 +8,8 @@ import { Separator } from '@/components/ui/separator';
 import { PostEditor } from '@/components/post-editor';
 import { PublishDialog } from '@/components/publish-dialog';
 import type { PlanItemData } from '@/components/pipeline-card';
+import { useManusApiKey } from '@/components/manus-api-key-provider';
+import { manusKeyHeaders } from '@/lib/manus-key-storage';
 
 interface ItemDetailPanelProps {
   item: PlanItemData;
@@ -34,6 +36,7 @@ export function ItemDetailPanel({
   onApprove,
   onReject,
 }: ItemDetailPanelProps) {
+  const { apiKey } = useManusApiKey();
   const [publishOpen, setPublishOpen] = useState(false);
   const text = item.contentItem?.textContent || '';
 
@@ -89,7 +92,7 @@ export function ItemDetailPanel({
         onPublish={async (platform) => {
           await fetch(`/api/plans/${planId}/items/${item._id}/publish`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...manusKeyHeaders(apiKey) },
             body: JSON.stringify({ platform }),
           });
         }}

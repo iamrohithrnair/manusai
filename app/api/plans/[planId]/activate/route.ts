@@ -7,13 +7,15 @@ import { buildContentResearchPack } from '@/lib/agents/content/research-context'
 import { buildContentSystemPrompt, buildVoiceProfileBlock } from '@/lib/agents/content/system-prompt';
 import type { VoiceProfileLike } from '@/lib/types/voice';
 import { createTask, pollUntilComplete, extractAssistantText } from '@/lib/manus-client';
+import { getManusApiKeyFromRequest } from '@/lib/manus-api-key';
 
 export const maxDuration = 300;
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ planId: string }> }
 ) {
+  const manusApiKey = getManusApiKeyFromRequest(req);
   const { planId } = await params;
   await connectDB();
   const db = getDb();
@@ -70,8 +72,8 @@ Topic: ${item.topic}
 ${voice?.contentBrief?.trim() ? `Honor the **spoken content brief** in Brand voice when choosing angle, emphasis, and CTA.\n\n` : ''}Write the final marketing copy in plain text or markdown as appropriate.`;
 
     try {
-      const { taskId } = await createTask(prompt);
-      const { messages } = await pollUntilComplete(taskId, { timeoutMs: null });
+      const { taskId } = await createTask(prompt, { apiKey: manusApiKey });
+      const { messages } = await pollUntilComplete(taskId, { timeoutMs: null, apiKey: manusApiKey });
       const text = extractAssistantText(messages);
 
       const ciId = randomUUID();
