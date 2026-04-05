@@ -1,0 +1,55 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env files (applies in any directory, e.g. docs/.env)
+.env
+.env.*
+!.env.example
+.env*.local
+
+# uploads
+/uploads
+
+# local SQLite (default path)
+/data/
+
+# typescript
+next-env.d.ts
+*.tsbuildinfo
+
+# editor / tooling
+.cursor/
+
+# logs
+*.log
+
+# turborepo / build caches
+.turbo
+
+# vercel
+.vercel
+
+# local docs / specs (not published)
+/docs/
